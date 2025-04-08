@@ -1,0 +1,79 @@
+# Load necessary libraries
+library(httr)       # For HTTP requests
+library(jsonlite)   # For parsing JSON responses
+library(stringr)    # For string manipulation
+library(dplyr)      # For data frame manipulation
+library(tidyr)      # For tidying data
+
+# Vector of state codes (UFs) in Brazil
+uf <- c(11,12,13,14,15,16,17, 
+        21,22,23,24,25,26,27,28,29, 
+        31,32,33,35,
+        41,42,43,
+        50,51,52,53)
+
+# Function to fetch RREO (Summary Fiscal Report) data from the Brazilian Treasury API
+Pegar_rreo <- function(ano, bimestre, ente, anexo){
+  
+  # Base URL for the RREO API
+  base_url_rreo <- "http://apidatalake.tesouro.gov.br/ords/siconfi/tt/rreo?"
+  
+  # Convert year and period to character
+  ano <- as.character(ano)
+  bimestre <- as.character(bimestre)
+  
+  tipo_relatorio <- "RREO"  # Report type
+  
+  # Format annex name according to API pattern (adds leading zero if needed)
+  num_anexo <- paste("RREO-Anexo+", if (anexo < 10){
+    paste(0, anexo, sep = "")
+  }, sep = "")
+  
+  ente <- as.character(ente)  # Convert entity (state code) to character
+  d <- data.frame()           # Initialize empty data frame to store results
+  
+  # Vector to store all generated URLs
+  x <- vector("character", length(as.numeric(ano)) * length(as.numeric(bimestre)))
+  k <- 0
+  
+  # Build URL list for all combinations of year and period
+  for (i in 1:length(ano)){
+    for(j in 1:length(bimestre)){
+      k <- k + 1
+      x[k] <- paste(base_url_rreo,
+                    "an_exercicio=", ano[i], "&",
+                    "nr_periodo=", bimestre[j], "&",
+                    "co_tipo_demonstrativo=", tipo_relatorio, "&",
+                    "no_anexo=", num_anexo, "&",
+                    "id_ente=", ente, sep = "")
+    }
+  }
+
+  # Loop over all URLs, request data and append to the result data frame
+  for(i in 1:length(x)){
+    rreo <- GET(x[i])                            # Make GET request
+    print(status_code(rreo))                     # Print HTTP status code
+    rreo_txt <- content(rreo, as="text", encoding="UTF-8")    # Get content as text
+    rreo_json <- fromJSON(rreo_txt, flatten = FALSE)          # Convert JSON to list
+    rreo_df <- as.data.frame(rreo_json[["items"]])            # Extract data frame
+    d <- rbind(d, rreo_df)                       # Append to main result
+  }
+  
+  return(d)  # Return the complete data frame
+}
+
+# Fetch Annex 4 of RREO for the state of Paraná (code 41), 1st bimester of 2025
+anexo_4_pr <- Pegar_rreo(c(2025), 1, 41, 4)
+
+# Initialize empty data frame for all states
+anexo_6_uf <- data.frame()
+
+# Fetch Annex 6 of RREO for all 27 states, 1st bimester of 2025
+for (i in 1:27) {
+  anexo_6_uf <- rbind(anexo_6_uf, Pegar_rreo(2025, 1, uf[i], 6))
+}
+
+# Export final dataset to CSV file with Latin1 encoding
+write.csv(anexo_6_uf, "C:\\", 
+          row.names = FALSE,
+          fileEncoding  = "Latin1")
